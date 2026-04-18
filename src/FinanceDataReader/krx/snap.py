@@ -4,8 +4,10 @@
 import requests
 import pandas as pd
 
-_krx_headers = {'User-Agent': 'Chrome/78.0.3904.87 Safari/537.36',
-               'Referer': 'http://data.krx.co.kr/', }
+_krx_headers = {
+    'User-Agent': 'Chrome/78.0.3904.87 Safari/537.36',
+    'Referer': 'https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd',
+}
 
 def _krx_last_working_day(date=None):
     '''지정한 날짜에서 가장 가까운 영업일
@@ -81,6 +83,42 @@ def _krx_index_listings(idx1, idx2, date=None):
     df = df.rename(columns=cols_map)
     return df
 
+class KrxSnapReaderCache:
+    def __init__(self, ticker):
+        self.ticker = ticker
+
+    def read(self):
+        if self.ticker == 'KRX/INDEX/LIST': # 지수목록
+            # df = _krx_index_codes()
+            # 요청한 날짜에 해당하는 데이터를 읽어온다 
+            # https://github.com/FinanceData/fdr_krx_data_cache/blob/master/data/snap/index_list/2026-03-11.csv
+            from datetime import datetime, timedelta
+            
+            today = datetime.today()
+            df = pd.DataFrame()
+            for i in range(15):
+                date_str = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+                url = f'https://raw.githubusercontent.com/FinanceData/fdr_krx_data_cache/master/data/snap/index_list/{date_str}.csv'
+                try:
+                    df = pd.read_csv(url, dtype=str)
+                    if not df.empty:
+                        break
+                except Exception:
+                    pass
+            
+            if df.empty:
+                raise ValueError(f"Failed to fetch KRX/INDEX/LIST cache up to {today.strftime('%Y-%m-%d')}")
+
+            df['Code'] = df['full_code'] + df['short_code']
+            df = df.rename(columns={'codeName':'Name', 'marketName':'Market'})
+            return df[['Code', 'Name', 'Market']]
+        elif self.ticker.startswith('KRX/INDEX/STOCK/'): # 지수구성종목
+            code = self.ticker.split('/')[-1]
+            df = _krx_index_listings(code[0], code[1:])
+            return df
+        else:
+            raise NotImplementedError(f'"{self.ticker}" is not implemented')
+            
 class KrxSnapReader:
     def __init__(self, ticker):
         self.ticker = ticker
