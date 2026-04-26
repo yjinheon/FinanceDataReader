@@ -391,6 +391,61 @@ class KrxIndexReader:
         return df
 
 
+class KrxIndexReaderCache:
+    """Read major KRX index prices from the FinanceData public GitHub cache.
+
+    Supported symbols: 'ks11' (KOSPI), 'kq11' (KOSDAQ), 'ks200' (KOSPI200).
+    Data source: https://github.com/FinanceData/fdr_krx_data_cache
+    """
+
+    _BASE_URL = (
+        "https://raw.githubusercontent.com/FinanceData/fdr_krx_data_cache/"
+        "master/data/index/year_{symbol}/{year}.csv"
+    )
+
+    def __init__(self, symbol, start=None, end=None):
+        self.symbol = symbol.lower()
+        self.start = (
+            datetime(1995, 1, 1) if start is None else pd.to_datetime(start)
+        )
+        self.end = datetime.today() if end is None else pd.to_datetime(end)
+
+    def read(self):
+        frames = []
+        for year in range(self.start.year, self.end.year + 1):
+            url = self._BASE_URL.format(symbol=self.symbol, year=year)
+            try:
+                frames.append(pd.read_csv(url))
+            except Exception:
+                continue
+
+        if not frames:
+            df = pd.DataFrame(
+                columns=[
+                    "Open", "High", "Low", "Close",
+                    "Volume", "Amount", "MarCap", "Change",
+                    "UpDown", "Comp",
+                ]
+            )
+            df.index.name = "Date"
+            df.attrs = {"exchange": "KRX", "source": "KRX-CACHE", "data": "INDEX"}
+            return df
+
+        df = pd.concat(frames, ignore_index=True)
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.set_index("Date").sort_index()
+        df = df.loc[self.start : self.end]
+
+        ordered = [c for c in [
+            "Open", "High", "Low", "Close",
+            "Volume", "Amount", "MarCap", "Change",
+            "UpDown", "Comp",
+        ] if c in df.columns]
+        df = df[ordered]
+        df.attrs = {"exchange": "KRX", "source": "KRX-CACHE", "data": "INDEX"}
+        return df
+
+
 class KrxDelistingReader:
     def __init__(self, symbol, start=None, end=None):
         self.symbol = symbol
